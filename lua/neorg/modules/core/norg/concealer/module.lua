@@ -115,8 +115,7 @@ module.public = {
     -- @Param namespace
     -- @Param from (number) - the line number that we should start at (defaults to 0)
     trigger_icons = function(buf, icon_set, namespace, from, to)
-        -- Clear all the conceals beforehand (so no overlaps occur)
-        module.public.clear_icons(buf, namespace, from, to)
+        local old_extmarks = module.public.get_old_extmarks(buf, namespace, from, to and to - 1)
 
         -- Get the root node of the document (required to iterate over query captures)
         local document_root = module.required["core.integrations.treesitter"].get_document_root(buf)
@@ -195,6 +194,12 @@ module.public = {
                 end
             end)
         end
+
+        schedule(function()
+            neorg.lib.map(old_extmarks, function(_, id)
+                vim.api.nvim_buf_del_extmark(buf, namespace, id)
+            end)
+        end)
     end,
 
     trigger_highlight_regex_code_block = function(buf, from, to)
@@ -332,7 +337,7 @@ module.public = {
             return
         end
 
-        module.public.clear_icons(buf, module.private.code_block_namespace, from, to)
+        local old_extmarks = module.public.get_old_extmarks(buf, module.private.code_block_namespace, from, to)
 
         -- The next block of code will be responsible for dimming code blocks accordingly
         local tree = vim.treesitter.get_parser(buf, "norg"):parse()[1]
@@ -368,12 +373,6 @@ module.public = {
                         for i = range.row_start, range.row_end >= vim.api.nvim_buf_line_count(buf) and 0 or range.row_end, 1 do
                             local line = vim.api.nvim_buf_get_lines(buf, i, i + 1, true)[1]
 
-                            -- If our buffer is modifiable or if our line is too short then try to fill in the line
-                            -- (this fixes broken syntax highlights automatically)
-                            if vim.bo.modifiable and line:len() < range.column_start then
-                                vim.api.nvim_buf_set_lines(buf, i, i + 1, true, { string.rep(" ", range.column_start) })
-                            end
-
                             -- If our line is valid and it's not too short then apply the dimmed highlight
                             if line and line:len() >= range.column_start then
                                 module.public._set_extmark(
@@ -388,17 +387,36 @@ module.public = {
                                     true,
                                     "blend"
                                 )
+                            else
+                                module.public._set_extmark(
+                                    buf,
+                                    { { string.rep(" ", range.column_start) } },
+                                    "NeorgCodeBlock",
+                                    module.private.code_block_namespace,
+                                    i,
+                                    i + 1,
+                                    0,
+                                    nil,
+                                    true,
+                                    "blend"
+                                )
                             end
                         end
                     end
                 end)
             end
+
+            schedule(function()
+                neorg.lib.map(old_extmarks, function(_, id)
+                    vim.api.nvim_buf_del_extmark(buf, module.private.code_block_namespace, id)
+                end)
+            end)
         end
     end,
 
     toggle_markup = function(buf)
         if module.config.public.markup.enabled then
-            module.public.clear_icons(buf, module.private.markup_namespace)
+            vim.api.nvim_buf_clear_namespace(buf, module.private.markup_namespace, 0, -1)
             module.config.public.markup.enabled = false
         else
             module.config.public.markup.enabled = true
@@ -439,11 +457,20 @@ module.public = {
         })
     end,
 
-    -- @Summary Clears all the conceals that neorg has defined
-    -- @Description Simply clears the Neorg extmark namespace
-    -- @Param from (number) - the line number to start clearing from
-    clear_icons = function(buf, namespace, from, to)
-        vim.api.nvim_buf_clear_namespace(buf, namespace, from or 0, to or -1)
+    get_old_extmarks = function(buf, namespace, from, to)
+        return neorg.lib.map(
+            neorg.lib.inline_pcall(
+                vim.api.nvim_buf_get_extmarks,
+                buf,
+                namespace,
+                from and { from, 0 } or 0,
+                to and { to, -1 } or -1,
+                {}
+            ) or {},
+            function(_, v)
+                return v[1]
+            end
+        )
     end,
 
     completion_levels = {
@@ -1013,7 +1040,7 @@ module.config.public = {
 
             on_hold = {
                 enabled = true,
-                icon = "",
+                icon = "",
                 highlight = "NeorgTodoItemOnHoldMark",
                 query = "(todo_item_on_hold) @icon",
                 extract = function()
@@ -1023,7 +1050,7 @@ module.config.public = {
 
             cancelled = {
                 enabled = true,
-                icon = "",
+                icon = "",
                 highlight = "NeorgTodoItemCancelledMark",
                 query = "(todo_item_cancelled) @icon",
                 extract = function()
@@ -1033,7 +1060,7 @@ module.config.public = {
 
             recurring = {
                 enabled = true,
-                icon = "⟳",
+                icon = "↺",
                 highlight = "NeorgTodoItemRecurringMark",
                 query = "(todo_item_recurring) @icon",
                 extract = function()
@@ -1351,7 +1378,7 @@ module.config.public = {
             multi_suffix = {
                 enabled = true,
                 icon = "⋘ ",
-                highlight = "NeorgDefinition",
+                highlight = "NeorgDefinitionEnd",
                 query = "(multi_definition_suffix) @icon",
             },
         },
@@ -1374,7 +1401,7 @@ module.config.public = {
             multi_suffix = {
                 enabled = true,
                 icon = "⁑ ",
-                highlight = "NeorgFootnote",
+                highlight = "NeorgFootnoteEnd",
                 query = "(multi_footnote_suffix) @icon",
             },
         },

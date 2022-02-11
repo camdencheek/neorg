@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-field
 --[[
     Submodule responsible for creating API for gtd displays
     A GTD display is a .norg file used to display informations after doing `:Neorg gtd views`
@@ -26,7 +27,7 @@ module.public = {
             "- Task marked with `today` context, and already started",
             "- Task starting today",
             "- Task due for today",
-            "- Task marked as pending",
+            "- Clarified task marked as pending",
             "",
         }
         local positions = {}
@@ -320,6 +321,7 @@ module.public = {
                         res,
                         "* " .. project.content .. " (" .. #completed .. "/" .. #tasks_project .. " done)"
                     )
+                    project.offset = 1
                     positions[#res] = project
 
                     local pct = module.public.percent(#completed, #tasks_project)
@@ -332,7 +334,7 @@ module.public = {
             end
         end
 
-        module.private.extras = projects_tasks
+        module.private.extras = tasks
         return module.private.generate_display(name, positions, res)
     end,
 
@@ -477,8 +479,9 @@ module.public = {
     --- Display every task or project that is unclarified
     --- @param type string
     --- @param data core.gtd.queries.task[]|core.gtd.queries.project[]
+    --- @param extras core.gtd.queries.task[]?
     --- @return number
-    display_unclarified = function(type, data)
+    display_unclarified = function(type, data, extras)
         local inbox = neorg.modules.get_module_config("core.gtd.base").default_lists.inbox
         local name = "Unclarified " .. type .. "s"
         local res = {
@@ -506,6 +509,7 @@ module.public = {
             for _, d in pairs(tbl) do
                 local result = "- " .. d.content
                 table.insert(res, result)
+                d.offset = 0
                 positions[#res] = d
             end
         end
@@ -525,6 +529,7 @@ module.public = {
         table.insert(res, "** Unclarified " .. type .. "s")
         neorg.lib.when(type == "task", function()
             table.insert(res, "> - tasks without `contexts` or `waiting_for`")
+            table.insert(res, "> Note: tasks that have a `due/start` date are de facto clarified")
         end, function()
             table.insert(res, "> - projects without tasks or not in `someday`")
         end)
@@ -534,6 +539,7 @@ module.public = {
             table.insert(res, "/No " .. type .. "s unclarified/")
         end, neorg.lib.wrap(construct, unclarified))
 
+        module.private.extras = extras
         return module.private.generate_display(name, positions, res)
     end,
 }
@@ -670,7 +676,7 @@ module.private = {
     toggle_details = function()
         local data = module.private.get_by_var()
         local res = {}
-        local offset = 0
+        local offset = data.offset or 0
 
         if not data or vim.tbl_isempty(data) then
             return
@@ -698,9 +704,10 @@ module.private = {
             end
             -- For displaying projects, we assume that there is no data.state in it
         elseif data.type == "project" then
-            offset = 1
-            local tasks = module.private.extras[data.uuid]
-            if not tasks then
+            local tasks = vim.tbl_filter(function(t)
+                return t.project_uuid == data.uuid
+            end, module.private.extras or {})
+            if vim.tbl_isempty(tasks) then
                 table.insert(res, "  - /No tasks found for this project/")
             else
                 for _, task in pairs(tasks) do
