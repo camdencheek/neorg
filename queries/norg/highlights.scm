@@ -193,7 +193,7 @@
 (marker (marker_prefix) @NeorgMarkerPrefix (paragraph_segment) @NeorgMarkerTitle)
 
 ; Definitions
-(single_definition (single_definition_prefix) @NeorgDefinition title: (paragraph_segment) @NeorgDefinitionTitle definition: (_)* @NeorgDefinitionContent)
+(single_definition (single_definition_prefix) @NeorgDefinition title: (paragraph_segment) @NeorgDefinitionTitle content: (_)* @NeorgDefinitionContent)
 (multi_definition (multi_definition_prefix) @NeorgDefinition title: (paragraph_segment) @NeorgDefinitionTitle content: (_)* @NeorgDefinitionContent end: (multi_definition_suffix) @NeorgDefinitionEnd)
 
 ; Footnotes
